@@ -1,0 +1,565 @@
+import string
+tok_int = 'int'
+tok_float = 'float'
+tok_identificador='identifier'
+tok_keyword='keyword'
+tok_plus = 'plus'
+tok_times = 'times'
+tok_subs = 'minus'
+tok_div = 'div'
+tok_pow='pow'
+tok_eq='eq'
+tok_rightpar = 'rightpar'
+tok_leftpar = 'leftpar'
+tok_dobeq='dobeq'
+tok_noteq='noteq'
+tok_lsth='lsth'
+tok_grth='grth'
+tok_lteq='lteq'
+tok_gteq='gteq'
+tok_endof_file='eof'
+nums = '0123456789'
+alfabeto = string.ascii_letters
+let_dig = alfabeto + nums
+keywords=['VAR','AND','OR','NOT']
+def string_with_arrows(text,start_pos,end_pos):
+    result=''
+    index_start=max(text.rfind('\n',0,start_pos.index),0)
+    index_end=text.find('\n',index_start+1)
+    if index_end<0:index_end=len(text)
+    line_cont=end_pos.linea - start_pos.linea+1
+    for i in range(line_cont):
+        linea=text[index_start:index_end]
+        columna_start=start_pos.columna if i==0 else 0
+        columna_end=end_pos.columna if i==line_cont-1 else len(linea)
+        result+=linea+'\n'
+        result+= ' ' * columna_start + '^' * (columna_end-columna_start+1)
+        index_start=index_end
+        index_end=text.find('\n',index_start+1)
+        if index_end<0:index_end=len(text)
+    return result.replace('\t','')
+class Error:
+    def __init__(self,start_pos,end_pos,nombre_error,detalles):
+        self.start_pos = start_pos
+        self.end_pos = end_pos
+        self.nombre_error = nombre_error
+        self.detalles = detalles
+    def as_string(self):
+        resultado = f'{self.nombre_error}:{self.detalles}\n'
+        resultado+=f'Archivo {self.start_pos.nombre_file}, línea {self.start_pos.linea + 1}'
+        resultado+='\n\n' + string_with_arrows(self.start_pos.content_file,self.end_pos)
+        return resultado
+class Error_de_char_ilegal(Error):
+    def __init__(self,start_pos,end_pos,detalles):
+        super().__init__(start_pos,end_pos,'Carácter ilegal',detalles)
+class Error_de_char_esperado(Error):
+    def __init__(self, start_pos, end_pos, detalles):
+        super().__init__(start_pos, end_pos,'Carácter esperado', detalles)
+class Error_sintaxis_invalida(Error):
+    def __init__ (self,start_pos,end_pos,detalles):
+        super().__init__(start_pos,end_pos,'Error de sintaxis',detalles)
+class Runtime_error(Error):
+    def __init__(self, start_pos, end_pos, detalles, context):
+        super().__init__(start_pos, end_pos, 'Runtime error', detalles)
+        self.context=context
+    def as_string(self):
+        resultado=self.generate_traceback()
+        resultado+= f'{self.nombre_error}:{self.detalles}\n'
+        resultado+='\n\n' + string_with_arrows(self.start_pos.content_file,self.end_pos)
+        return resultado
+    def generate_traceback(self):
+        resultado=''
+        pos=self.start_pos
+        ctx=self.context
+        while ctx:
+            resultado=f'Archivo {pos.nombre_file}, linea {str(pos.linea+1)}, in {ctx.show_name}\n' + resultado
+            pos=ctx.parent_initialpos
+            ctx=ctx.parent
+        return 'Traceback (en orden de antigüedad de arriba hacia abajo)'
+class Position:
+    def __init__(self,index,linea,columna,nombre_file,content_file):
+        self.index=index
+        self.linea=linea
+        self.columna=columna
+        self.nombre_file=nombre_file
+        self.content_file=content_file
+    def advance(self,actual=None):
+        self.index+=1
+        self.columna+=1
+        if actual=='\n':
+            self.linea+=1
+            self.columna=0
+        return self
+    def copy(self):
+        return Position(self.index,self.linea,self.columna,self.nombre_file,self.content_file)
+class Token:
+    def __init__(self, type, value = None,start_pos=None,end_pos=None):
+        self.type = type
+        self.value = value
+        if start_pos:
+            self.start_pos=start_pos.copy()
+            self.end_pos=start_pos.copy()
+            self.end_pos.advance()
+            if end_pos:
+                self.end_pos=end_pos
+    def matches(self,type_,value):
+        return self.type==type_ and self.value== value
+    def __repr__(self):
+        if self.value: return f'{self.type}:{self.value}'
+        return f'{self.type}'
+class Lexer:
+    def __init__(self,nombre_file,text):
+        self.nombre_file=nombre_file
+        self.text = text
+        self.pos = Position(-1,0,-1,nombre_file,text)
+        self.actual = None
+        self.advance()
+    def advance(self):
+        self.pos.advance(self.actual)
+        self.actual = self.text[self.pos.index] if self.pos.index < len(self.text) else None
+    def make_tokens(self):
+        tokens=[]
+        while self.actual != None:
+            if self.actual in '\t':
+                self.advance()
+            elif self.actual in nums:
+                tokens.append(self.make_number())
+            elif self.actual in alfabeto:
+                tokens.append(self.make_identificador())
+            elif self.actual == '+':
+                tokens.append(Token(tok_plus,start_pos=self.pos))
+                self.advance()
+            elif self.actual == '-':
+                tokens.append(Token(tok_subs,start_pos=self.pos))
+                self.advance()
+            elif self.actual == '*':
+                tokens.append(Token(tok_times,start_pos=self.pos))
+                self.advance()
+            elif self.actual == '/':
+                tokens.append(Token(tok_div,start_pos=self.pos))
+                self.advance()
+            elif self.actual == '^':
+                tokens.append(Token(tok_pow,start_pos=self.pos))
+                self.advance()
+            elif self.actual == '=':
+                tokens.append(Token(tok_eq,start_pos=self.pos))
+                self.advance()
+            elif self.actual == '(':
+                tokens.append(Token(tok_leftpar,start_pos=self.pos))
+                self.advance()
+            elif self.actual == ')':
+                tokens.append(Token(tok_rightpar,start_pos=self.pos))
+                self.advance()
+            elif self.actual == '!':
+                token, error=self.make_no_iguales()
+                if error: return [],error
+                tokens.append(token)
+            elif self.actual == '=':
+                tokens.append(self.make_iguales())
+                self.advance()
+            elif self.actual == '<':
+                tokens.append(self.make_menorque())
+                self.advance()
+            elif self.actual == '>':
+                tokens.append(self.make_mayorque())
+                self.advance()
+            else:
+                start_pos=self.pos.copy()
+                char=self.actual
+                self.advance()
+                return [], Error_de_char_ilegal(start_pos, self.pos,"'" + char + "'")
+        tokens.append(Token(tok_endof_file,start_pos=self.pos))
+        return tokens,None
+    def make_number(self):
+        num_str=''
+        dot_count=0
+        start_pos=self.pos.copy()
+        while self.actual != None and self.actual in nums + '.':
+            if self.actual=='.':
+                if dot_count==1: break
+                dot_count+=1
+                num_str+='.'
+            else:
+                num_str+=self.actual
+            self.advance()
+        if dot_count==0:
+            return Token(tok_int,int(num_str),start_pos,self.pos)
+        else:
+            return Token(tok_float,float(num_str),start_pos,self.pos)
+    def make_identificador(self):
+        id_str=''
+        start_pos=self.pos.copy()
+        while self.actual != None and self.actual in let_dig + '_':
+            id_str+=self.actual
+            self.advance()
+        tok_type=tok_keyword if id_str in keywords else tok_identificador
+        return Token(tok_type,id_str,start_pos,self.pos)
+    def make_no_iguales(self):
+        start_pos=self.pos.copy()
+        self.advance()
+        if self.actual=='=':
+            self.advance()
+            return Token(tok_noteq,start_pos=start_pos,end_pos=self.pos),None
+        self.advance()
+        return None, Error_de_char_esperado(start_pos,self.pos,"'=' (después de '!')")
+    def make_iguales(self):
+        tok_type=tok_eq
+        start_pos=self.pos.copy()
+        self.advance()
+        if self.actual == '=':
+            self.advance()
+            tok_type=tok_dobeq
+        return Token(tok_type,start_pos=start_pos,end_pos=self.pos)
+    def make_menorque(self):
+        tok_type=tok_lsth
+        start_pos=self.pos.copy()
+        self.advance()
+        if self.actual == '=':
+            self.advance()
+            tok_type=tok_lteq
+        return Token(tok_type,start_pos=start_pos,end_pos=self.pos)
+    def make_mayorque(self):
+        tok_type=tok_grth
+        start_pos=self.pos.copy()
+        self.advance()
+        if self.actual == '=':
+            self.advance()
+            tok_type=tok_gteq
+        return Token(tok_type,start_pos=start_pos,end_pos=self.pos)
+class Number_node:
+    def __init__(self,tok):
+        self.tok=tok
+        self.start_pos=self.tok.start_pos
+        self.end_pos=self.tok.end_pos
+    def __repr__(self):
+        return f'{self.tok}'
+class VarAccessNode:
+    def __init__(self,var_name_tok):
+        self.var_name_tok=var_name_tok
+        self.start_pos=self.var_name_tok.start_pos
+        self.end_pos=self.var_name_tok.end_pos
+class VarAssignNode:
+    def __init__(self,var_name_tok,valor_nodo):
+        self.var_name_tok=var_name_tok
+        self.valor_nodo=valor_nodo
+        self.start_pos=self.var_name_tok.start_pos
+        self.end_pos=self.valor_nodo.end_pos
+class Bin_op_node:
+    def __init__(self,nodo_izq,op_tok,nodo_der):
+        self.nodo_izq=nodo_izq
+        self.op_tok=op_tok
+        self.nodo_der=nodo_der
+        self.start_pos=self.nodo_izq.start_pos
+        self.end_pos=self.nodo_der.end_pos
+    def __repr__(self):
+         return f'({self.nodo_izq},{self.op_tok},{self.nodo_der})'
+class Op_unitaria:
+    def __init__(self,op_tok,nodo):
+        self.op_tok=op_tok
+        self.nodo=nodo
+        self.start_pos=self.op_tok.start_pos
+        self.end_pos=nodo.end_pos
+    def __repr__(self):
+        return f'({self.op_tok},{self.nodo})'
+class Parse_result:
+    def __init__(self):
+        self.error=None
+        self.nodo=None
+        self.advancecont=0
+    def registro_advance(self):
+        self.advancecont+=1
+    def registro(self,res):
+        self.advancecont+=res.advancecont
+        if res.error: self.error=res.error
+        return res.nodo
+    def exito(self,nodo):
+        self.nodo=nodo
+        return self
+    def fallo(self,error):
+        if not self.error or self.advancecont==0:
+            self.error=error
+        return self
+class Parser:
+    def __init__(self,tokens):
+        self.tokens=tokens
+        self.tok_index=-1
+        self.advance()
+    def advance(self, ):
+        self.tok_index+=1
+        if self.tok_index < len(self.tokens):
+            self.actual_tok=self.tokens[self.tok_index]
+        return self.actual_tok
+    def parse(self):
+        result=self.expr()
+        if not result.error and self.actual_tok.type !=tok_endof_file:
+            return result.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos,self.actual_tok.end_pos,"Símbolo esperado '+','-','*' o '/'"))
+        return result
+    def atom(self):
+        res = Parse_result()
+        tok = self.actual_tok
+        if tok.type in (tok_int,tok_float):
+            res.registro_advance()
+            self.advance()
+            return res.exito(Number_node(tok))
+        elif tok.type==tok_identificador:
+            res.registro_advance()
+            self.advance()
+            return res.exito(VarAccessNode(tok))
+        elif tok.type == tok_leftpar:
+            res.registro_advance()
+            self.advance()
+            expr = res.registro(self.expr())
+            if res.error: return res
+            if self.actual_tok.type == tok_rightpar:
+                res.registro_advance()
+                self.advance()
+                return res.exito(expr)
+            else:
+                return res.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos, self.actual_tok.end_pos,"Se espera operador ')'"))
+        return res.fallo(Error_sintaxis_invalida(tok.start_pos, tok.end_pos,"Se espera dato tipo int, float, identificador, '+', '-' o '('"))
+    def power(self):
+         return self.op_binaria(self.atom, (tok_pow, ),self.factor)
+    def factor(self, ):
+        res=Parse_result()
+        tok=self.actual_tok
+        if tok.type in (tok_plus,tok_subs):
+            res.registro_advance()
+            self.advance()
+            factor=res.registro(self.factor())
+            if res.error:return res
+            return res.exito(Op_unitaria(tok,factor))
+        return self.power()
+    def term(self, ):
+        return self.op_binaria(self.factor,(tok_times,tok_div))
+    def expr_aritmetica(self):
+        return self.op_binaria(self.term,(tok_plus,tok_subs))
+    def comp_expr(self):
+        res=Parse_result()
+        if self.actual_tok.matches(tok_keyword,'NOT'):
+            op_tok=self.actual_tok
+            res.registro_advance()
+            self.advance()
+            nodo=res.registro(self.comp_expr())
+            if res.error:return res
+            return res.exito(Op_unitaria(op_tok,nodo))
+        nodo=res.registro(self.op_binaria(self.expr_aritmetica,(tok_dobeq,tok_noteq,tok_lsth,tok_lteq,tok_grth,tok_gteq)))
+        if res.error:return res.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos,self.actual_tok.end_pos,"Se espera dato tipo int, float, identificador, '+','-','(' o 'NOT'"))
+        return res.exito(nodo)
+    def expr(self, ):
+        res=Parse_result()
+        if self.actual_tok.matches(tok_keyword,'VAR'):
+            res.registro_advance()
+            self.advance()
+            if self.actual_tok.type != tok_identificador:
+                return res.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos,self.actual_tok.end_pos,'Se espera identificador'))
+            var_name=self.actual_tok
+            res.registro_advance()
+            self.advance()
+            if self.actual_tok.type !=tok_eq:
+                return res.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos,self.actual_tok.end_pos,"Se espera símbolo '='"))
+            res.registro_advance()
+            self.advance()
+            expr=res.registro(self.expr())
+            if res.error:return res
+            return res.exito(VarAssignNode(var_name,expr))
+        nodo=res.registro(self.op_binaria(self.comp_expr,((tok_keyword,'AND'),(tok_keyword,'OR'))))
+        if res.error: 
+            return res.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos,self.actual_tok.end_pos,"Se espera 'VAR',int,float,identificador '+','-' o '('"))
+        return res.exito(nodo)
+    def op_binaria(self,funcion_a,acc_op,funcion_b=None):
+        if funcion_b==None:
+            funcion_b=funcion_a
+        res=Parse_result()
+        izq=res.registro(funcion_a())
+        if res.error: return res
+        while self.actual_tok.type in acc_op or (self.actual_tok.type,self.actual_tok.value) in acc_op:
+            op_tok=self.actual_tok
+            res.registro_advance()
+            self.advance()
+            der=res.registro(funcion_b())
+            if res.error: return res
+            izq=Bin_op_node(izq,op_tok,der)
+        return res.exito(izq)
+class RT_result:
+    def __init__(self):
+        self.valor=None
+        self.error=None
+    def registro(self,res):
+        if res.error: self.error = res.error
+        return res.valor
+    def exito(self,valor):
+        self.valor=valor
+        return self
+    def fallo(self,error):
+        self.error=error
+        return self
+class Numero:
+    def __init__(self,valor):
+        self.valor=valor
+        self.set_pos()
+        self.set_context()
+    def set_pos(self,start_pos=None,end_pos=None):
+        self.start_pos=start_pos
+        self.end_pos=end_pos
+        return self
+    def set_context(self,context=None):
+        self.context=context
+        return self
+    def suma(self,other):
+        if isinstance(other,Numero):
+            return Numero(self.valor + other.valor).set_context(self.context),None
+    def resta(self,other):
+        if isinstance(other,Numero):
+            return Numero(self.valor - other.valor).set_context(self.context),None
+    def mult(self,other):
+        if isinstance(other,Numero):
+            return Numero(self.valor * other.valor).set_context(self.context),None
+    def div(self,other):
+        if isinstance(other,Numero):
+            if other.valor==0:
+                return None,Runtime_error(other.start_pos,other.end_pos,'División por cero',self.context)
+            return Numero(self.valor / other.valor).set_context(self.context),None
+    def elevado(self,other):
+        if isinstance(other,Numero):
+            return Numero(self.valor ** other.valor).set_context(self.context),None
+    def get_compara_eq(self,other):
+        if isinstance(other,Numero):
+            return Numero(int(self.valor==other.valor)).set_context(self.context),None
+    def get_compara_noteq(self,other):
+        if isinstance(other,Numero):
+            return Numero(int(self.valor!=other.valor)).set_context(self.context),None
+    def get_compara_menorque(self,other):
+        if isinstance(other,Numero):
+            return Numero(int(self.valor<other.valor)).set_context(self.context),None
+    def get_compara_mayorque(self,other):
+        if isinstance(other,Numero):
+            return Numero(int(self.valor>other.valor)).set_context(self.context),None
+    def get_compara_menorigual(self,other):
+        if isinstance(other,Numero):
+            return Numero(int(self.valor<=other.valor)).set_context(self.context),None
+    def get_compara_mayorigual(self,other):
+        if isinstance(other,Numero):
+            return Numero(int(self.valor>=other.valor)).set_context(self.context),None
+    def logand(self, other):
+        if isinstance(other, Numero):
+            return Numero(int(self.valor and other.valor)).set_context(self.context),None
+    def logor(self, other):
+        if isinstance(other, Numero):
+            return Numero(int(self.valor or other.valor)).set_context(self.context), None
+    def lognot(self):
+            return Numero(1 if self.valor == 0 else 0).set_context(self.context), None
+    def copy(self):
+        copy=Numero(self.valor)
+        copy.set_pos(self.start_pos,self.end_pos)
+        copy.set_context(self.context)
+        return copy 
+    def __repr__(self):
+        return str(self.valor)
+class Contexto:
+    def __init__(self,show_name,parent=None,parent_initialpos=None):
+        self.show_name=show_name
+        self.parent=parent
+        self.parent_initialpos=parent_initialpos
+        self.tabla_de_simbolos=None
+class TablaSimbolos:
+    def __init__(self):
+        self.simbolos={}
+        self.parent=None
+    def get(self,nombre):
+        valor=self.simbolos.get(nombre,None)
+        if valor== None and self.parent:
+            return self.parent.get(nombre)
+        return valor
+    def set(self,nombre,valor):
+        self.simbolos[nombre]=valor
+    def eliminar(self,nombre):
+        del self.simbolos[nombre]
+class Interpreter:
+    def visit(self,nodo,context):
+        nombre_metodo=f'visit_{type(nodo).__name__}'
+        metodo=getattr(self,nombre_metodo,self.no_visit_metodo)
+        return metodo(nodo,context)
+    def no_visit_metodo(self,nodo,context):
+        raise Exception(f'Sin visit_{type(nodo).__name__} definido')
+    def visit_Number_node(self,nodo,context):
+        return RT_result().exito(Numero(nodo.tok.value).set_context(context).set_pos(nodo.start_pos,nodo.end_pos))
+    def visit_VarAccessNode(self,nodo,contexto):
+        res=RT_result()
+        var_nombre=nodo.var_name_tok.value
+        valor=contexto.tabla_de_simbolos.get(var_nombre)
+        if not valor:
+            return res.fallo(Runtime_error(nodo.start_pos,nodo.end_pos,f"'{var_nombre}' no está definida",contexto))
+        valor=valor.copy().set_pos(nodo.start_pos,nodo.end_pos)
+        return res.exito(valor)
+    def visit_VarAssignNode(self,nodo,contexto):
+        res=RT_result()
+        var_nombre=nodo.var_name_tok.value
+        valor=res.registro(self.visit(nodo.valor_nodo,contexto))
+        if res.error:return res
+        contexto.tabla_de_simbolos.set(var_nombre,valor)
+        return res.exito(valor)
+    def visit_Bin_op_node(self,nodo,contexto):
+        res=RT_result()
+        izq=res.registro(self.visit(nodo.nodo_izq,contexto))
+        if res.error: return res
+        der=res.registro(self.visit(nodo.nodo_der,contexto))
+        if res.error: return res
+        if nodo.op_tok.type == tok_plus:
+            resultado,error=izq.suma(der)
+        elif nodo.op_tok.type == tok_subs:
+            resultado,error=izq.resta(der)
+        elif nodo.op_tok.type == tok_times:
+            resultado,error=izq.mult(der)
+        elif nodo.op_tok.type == tok_div:
+            resultado,error=izq.div(der)
+        elif nodo.op_tok.type == tok_pow:
+            resultado,error=izq.elevado(der)
+        elif nodo.op_tok.type == tok_dobeq:
+            resultado, error = izq.get_compara_eq(der)
+        elif nodo.op_tok.type == tok_noteq:
+            resultado, error = izq.get_compara_noteq(der)
+        elif nodo.op_tok.type == tok_lsth:
+            resultado, error = izq.get_compara_menorque(der)
+        elif nodo.op_tok.type == tok_grth:
+            resultado, error = izq.get_compara_mayorque(der)
+        elif nodo.op_tok.type == tok_lteq:
+            resultado, error = izq.get_compara_menorigual(der)
+        elif nodo.op_tok.type == tok_gteq:
+            resultado, error = izq.get_compara_mayorigual(der)
+        elif nodo.op_tok.matches(tok_keyword, 'AND'):
+            resultado, error = izq.logand(der)
+        elif nodo.op_tok.matches(tok_keyword, 'OR'):
+            resultado, error = izq.logor(der)
+        if error:
+            return res.fallo(error)
+        else:
+            return res.exito(resultado.set_pos(nodo.start_pos, nodo.end_pos))
+    def visit_Op_unitaria(self,nodo,contexto):
+        res=RT_result()
+        number=res.registro(self.visit(nodo.nodo,contexto))
+        if res.error: return res
+        error=None
+        if nodo.op_tok.type == tok_subs:
+            number,error=number.mult(Numero(-1))
+        if nodo.op_tok.matches(tok_keyword,'NOT'):
+            number,error=number.lognot()
+        if error:
+            return res.fallo(error)
+        else:
+            return res.exito(number.set_pos(nodo.start_pos, nodo.end_pos))
+global_tabla_de_simbolos=TablaSimbolos()
+global_tabla_de_simbolos.set("Null",Numero(0))
+global_tabla_de_simbolos.set("True",Numero(1))
+global_tabla_de_simbolos.set("False",Numero(0))
+def run(nombre_file,text):
+    lexer=Lexer(nombre_file,text)
+    token,error=lexer.make_tokens()
+    if error: return None, error
+    parser=Parser(token)
+    ast=parser.parse()
+    if ast.error: return None,ast.error
+    interpreter=Interpreter()
+    context=Contexto('<program>')
+    context.tabla_simbolos=global_tabla_de_simbolos
+    result=interpreter.visit(ast.nodo,context)
+    return result.valor,result.error
