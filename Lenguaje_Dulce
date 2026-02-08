@@ -21,7 +21,7 @@ tok_endof_file='eof'
 nums = '0123456789'
 alfabeto = string.ascii_letters
 let_dig = alfabeto + nums
-keywords=['VAR','AND','OR','NOT','IF','THEN','ElseIf','ELSE']
+keywords=['VAR','AND','OR','NOT']
 def string_with_arrows(text,start_pos,end_pos):
     result=''
     index_start=max(text.rfind('\n',0,start_pos.index),0)
@@ -316,10 +316,6 @@ class Parser:
                 return res.exito(expr)
             else:
                 return res.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos, self.actual_tok.end_pos,"Se espera operador ')'"))
-        elif tok.matches(tok_keyword,'IF'):
-            if_expr=res.registro(self.if_expr())
-            if res.error:return res
-            return res.exito(if_expr)
         return res.fallo(Error_sintaxis_invalida(tok.start_pos, tok.end_pos,"Se espera dato tipo int, float, identificador, '+', '-' o '('"))
     def power(self):
          return self.op_binaria(self.atom, (tok_pow, ),self.factor)
