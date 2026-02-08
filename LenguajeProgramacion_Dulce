@@ -261,6 +261,12 @@ class Op_unitaria:
         self.end_pos=nodo.end_pos
     def __repr__(self):
         return f'({self.op_tok},{self.nodo})'
+class NodoIf:
+    def __init__(self,casos,else_caso):
+        self.casos=casos
+        self.else_caso=else_caso
+        self.start_pos=self.casos[0][0].start_pos
+        self.end_pos=(self.else_caso of self.casos[len(self.casos)-1[0]).end_pos
 class Parse_result:
     def __init__(self):
         self.error=None
@@ -316,6 +322,10 @@ class Parser:
                 return res.exito(expr)
             else:
                 return res.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos, self.actual_tok.end_pos,"Se espera operador ')'"))
+        elif tok.matches(tok_keyword,'IF'):
+            if_expr=res.registro(self.if_expr())
+            if res.error:return res
+            return res.exito(if_expr)
         return res.fallo(Error_sintaxis_invalida(tok.start_pos, tok.end_pos,"Se espera dato tipo int, float, identificador, '+', '-' o '('"))
     def power(self):
          return self.op_binaria(self.atom, (tok_pow, ),self.factor)
@@ -447,7 +457,9 @@ class Numero:
         if isinstance(other, Numero):
             return Numero(int(self.valor or other.valor)).set_context(self.context), None
     def lognot(self):
-            return Numero(1 if self.valor == 0 else 0).set_context(self.context), None
+        return Numero(1 if self.valor == 0 else 0).set_context(self.context), None
+    def is_true(self):
+        return self.valor!=0
     def copy(self):
         copy=Numero(self.valor)
         copy.set_pos(self.start_pos,self.end_pos)
@@ -547,6 +559,20 @@ class Interpreter:
             return res.fallo(error)
         else:
             return res.exito(number.set_pos(nodo.start_pos, nodo.end_pos))
+    def visit_NodoIf(self,nodo,contexto):
+        res=RT_result()
+        for condicion,expr in nodo.casos:
+            condicion_valor=res.registro(self.visit(condicion,contexto))
+            if res.error:return res
+            if condicion_valor.is_true():
+                expr_valor=res.registro(self.visit(expr,contexto))
+                if res.error:return res
+                return res.error(expr_valor)
+        if nodo.else_caso:
+            else_valor=res.registro(self.visit(nodo.else_caso,contexto))
+            if res.error:return res
+            return res.exito(else_valor)
+        return res.exito(None)
 global_tabla_de_simbolos=TablaSimbolos()
 global_tabla_de_simbolos.set("Null",Numero(0))
 global_tabla_de_simbolos.set("True",Numero(1))
