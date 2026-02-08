@@ -21,7 +21,7 @@ tok_endof_file='eof'
 nums = '0123456789'
 alfabeto = string.ascii_letters
 let_dig = alfabeto + nums
-keywords=['VAR','AND','OR','NOT']
+keywords=['VAR','AND','OR','NOT','IF','THEN','ElseIf','ELSE','FOR','TO','STEP','WHILE']
 def string_with_arrows(text,start_pos,end_pos):
     result=''
     index_start=max(text.rfind('\n',0,start_pos.index),0)
@@ -267,6 +267,21 @@ class NodoIf:
         self.else_caso=else_caso
         self.start_pos=self.casos[0][0].start_pos
         self.end_pos=(self.else_caso of self.casos[len(self.casos)-1[0]).end_pos
+class NodoFor:
+    def __init__(self,var_name_tok,start_value_nodo,end_value_nodo,step_value_nodo,body_nodo):
+        self.var_name_tok=var_name_tok
+        self.start_value_nodo=start_value_nodo
+        self.end_value_nodo=end_value_nodo
+        self.step_value_nodo=step_value_nodo
+        self.body_nodo=body_nodo
+        self.start_pos=self.var_name_tok.start_pos
+        self.end_pos=self.body_nodo.end_pos
+class NodoWhile:
+    def __init__(self,nodo_condicion,nodo_cuerpo):
+        self.nodo_condicion=nodo_condicion
+        self.nodo_cuerpo=nodo_cuerpo
+        self.start_pos=self.nodo_condicion.start_pos
+        self.end_pos=self.nodo_cuerpo.end_pos
 class Parse_result:
     def __init__(self):
         self.error=None
@@ -300,6 +315,93 @@ class Parser:
         if not result.error and self.actual_tok.type !=tok_endof_file:
             return result.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos,self.actual_tok.end_pos,"Símbolo esperado '+','-','*' o '/'"))
         return result
+    def if_expr(self):
+        res=Parse_result()
+        casos=[]
+        else_caso=None
+        if not self.actual_tok.matches(tok_keyword,'IF'):
+            return res.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos,self.actual_tok.end_pos,f"Se espera condición 'IF'"))
+        res.registro_advance()
+        self.advance()
+        condicion=res.registro(self.expr())
+        if res.error:return res
+        if not self.actual_tok.matches(tok_keyword,'THEN'):
+            return res.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos,self.actual_tok.end_pos,"Se espera condición 'THEN'"))
+        res.registro_advance()
+        self.advance()
+        expr=res.registro(self.expr())
+        if res.error:return res
+        casos.append((condicion,expr))
+        while self.actual_tok.matches(tok_keyword,'ElseIf'):
+            res.registro_advance()
+            self.advance()
+            condicion=res.registro(self.expr())
+            if res.error:return res
+            if not self.actual_tok.matches(tok_keyword,'THEN'):
+                return res.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos,self.actual_tok.end_pos,"Se espera condición 'THEN'"))
+            res.registro_advance()
+            self.advance()
+            expr=res.registro(self.expr())
+            if res.error:return res
+            casos.append((condicion,expr))
+        if self.actual_tok.matches(tok_keyword,'ELSE'):
+            res.registro_advance()
+            self.advance()
+            else_caso=res.registro(self.expr())
+            if res.error: return res
+        return res.exito(NodoIf(casos,else_caso))
+    def for_expr(self):
+        res=Parse_result()
+        if not self.actual_tok.matches(tok_keyword,'FOR'):
+            return res.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos,self.actual_tok.end_pos,"Se espera instrucción 'FOR'"))
+        res.registro_advance()
+        self.advance()
+        if self.actual_tok != tok_identificador:
+            return res.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos,self.actual_tok.end_pos,'Se espera identificador'))
+        var_name=self.actual_tok
+        res.registro_advance()
+        self.advance()
+        if self.actual_tok.type != tok_eq:
+            return res.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos,self.actual_tok.end_pos,"Se espera símbolo '='"))
+        res.registro_advance()
+        self.advance()
+        start_value=res.registro(self.expr())
+        if res.error:return res
+        if not self.actual_tok.matches(tok_keyword,'TO'):
+            return res.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos,self.actual_tok.end_pos,"Se espera instrucción 'TO'"))
+        res.registro_advance()
+        self.advance()
+        end_value=res.registro(self.expr())
+        if res.error: return res
+        if self.actual_tok.matches(tok_keyword, 'STEP'):
+            res.registro_advance()
+            self.advance()
+            step_value = res.registro(self.expr())
+            if res.error: return res
+        else:
+            step_value = None
+        if not self.actual_tok.matches(tok_keyword, 'THEN'):
+            return res.failure(Error_sintaxis_invalida(self.actual_tok.start_pos, self.actual_tok.end_pos,f"Se espera 'THEN'"))
+        res.registro_advance()
+        self.advance()
+        body = res.registro(self.expr())
+        if res.error: return res
+        return res.exito(NodoFor(var_name, start_value, end_value, step_value, body))
+        def while_expr(self):
+        res=Parse_result()
+        if not self.actual_tok.matches(tok_keyword,'WHILE'):
+            return res.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos,self.actual_tok.end_pos,"Se espera intrucción 'WHILE'"))
+        res.registro_advance()
+        self.advance()
+        condicion=res.registro(self.expr())
+        if res.error:return res
+        if not self.actual_tok.matches(tok_keyword,'THEN'):
+            return res.fallo(Error_sintaxis_invalida(self.actual_tok.start_pos,self.actual_tok.end_pos,"Se espera instrucciòn 'THEN'"))
+        res.registro_advance()
+        self.advance()
+        body=res.registro(self.expr())
+        if res.error:return res
+        return res.exito(NodoWhile(condicion,body))
     def atom(self):
         res = Parse_result()
         tok = self.actual_tok
@@ -326,6 +428,14 @@ class Parser:
             if_expr=res.registro(self.if_expr())
             if res.error:return res
             return res.exito(if_expr)
+         elif tok.matches(tok_keyword,'FOR'):
+            for_expr=res.registro(self.for_expr())
+            if res.error:return res
+            return res.exito(for_expr)
+        elif tok.matches(tok_keyword,'WHILE'):
+            while_expr=res.registro(self.while_expr())
+            if res.error:return res
+            return res.exito(while_expr)
         return res.fallo(Error_sintaxis_invalida(tok.start_pos, tok.end_pos,"Se espera dato tipo int, float, identificador, '+', '-' o '('"))
     def power(self):
          return self.op_binaria(self.atom, (tok_pow, ),self.factor)
@@ -572,6 +682,35 @@ class Interpreter:
             else_valor=res.registro(self.visit(nodo.else_caso,contexto))
             if res.error:return res
             return res.exito(else_valor)
+        return res.exito(None)
+    def visit_NodoFor(self,nodo,contexto):
+        res=RT_result()
+        start_value=res.registro(self.visit(nodo.start_value_nodo,contexto))
+        if res.error:return res
+        end_value=res.registro(self.visit(nodo.end_value_nodo,contexto))
+        if res.error:return res
+        if nodo.step_value_nodo:
+            step_value=res.registro(self.visit(nodo.step_value_nodo,contexto))
+            if res.error:return res
+            else:
+                step_value=Numero(1)
+            i=start_value.valor
+            if step_value.valor>=0:
+                condicion=lambda:i<end_value.valor
+            else:
+                condicion=lambda:i>end_value.valor
+            while condicion():
+                contexto.tabla_de_simbolos.set(nodo.body_nodo,contexto)
+                if res.error:return res
+            return res.exito(None)
+    def visit_NodoWhile(self,nodo,contexto):
+        res=RT_result()
+        while True:
+            condicion=res.registro(self.visit(nodo.condicion_nodo,contexto))
+            if res.error:return res
+            if not condicion.id_true():break
+            res.registro(self.visit(nodo.body_nodo,contexto))
+            if res.error:return res
         return res.exito(None)
 global_tabla_de_simbolos=TablaSimbolos()
 global_tabla_de_simbolos.set("Null",Numero(0))
