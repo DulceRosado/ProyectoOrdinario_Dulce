@@ -1,0 +1,6 @@
+import lexer
+while True:
+    text=input('data:')
+    resultado,error=lexer.run('<stdin>',text)
+    if error: print(error.as_string())
+    elif resultado: print(resultado)
