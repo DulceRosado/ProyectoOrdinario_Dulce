@@ -231,6 +231,11 @@ class Lexer:
                 return [], LexError(pos_start, self.pos, f"'{char}'")
         tokens_list.append(Token('EOF', pos_start=self.pos))
         return tokens_list, None
+
+
+
+
+
 from lexer import Token
 class NumberNode:
     def __init__(self, tok):
@@ -464,26 +469,26 @@ class Parser:
             if self.current_tok.type != 'IDENTIFIER':
                 return res.failure(InvalidSyntaxError(
                     self.current_tok.pos_start, self.current_tok.pos_end,
-                    "Expected identifier"))
+                    "Expected identifier"))            
             var_name = self.current_tok
             res.register_advancement()
-            self.advance()
+            self.advance()            
             if self.current_tok.type != 'EQ':
                 return res.failure(InvalidSyntaxError(
                     self.current_tok.pos_start, self.current_tok.pos_end,
-                    "Expected '='"))
+                    "Expected '='"))            
             res.register_advancement()
-            self.advance()
+            self.advance()            
             expr = res.register(self.expr())
             if res.error:
-                return res
+                return res            
             return res.success(VarAssignNode(var_name, expr))
-        node = res.register(self.bin_op(self.comp_expr, (('AND', 'AND'), ('OR', 'OR'))))
+        node = res.register(self.bin_op(self.comp_expr, (('AND', 'AND'), ('OR', 'OR'))))        
         if res.error:
             return res.failure(InvalidSyntaxError(
                 self.current_tok.pos_start, self.current_tok.pos_end,
                 "Expected 'VAR', 'IF', 'FOR', 'WHILE', 'FUN', int, float, identifier, '+', '-', '(', '[' or 'NOT'"
-            ))
+            ))        
         return res.success(node)
     def comp_expr(self):
         res = ParseResult()
@@ -656,10 +661,6 @@ class Parser:
         return res.success(ListNode(element_nodes, pos_start, self.current_tok.pos_end.copy()))
 
     def if_expr(self):
-        """
-        if_expr : IF expr THEN (statement if_expr_b|if_expr_c?)
-                | IF expr THEN NEWLINE statements END
-        """
         res = ParseResult()
         all_cases = res.register(self.if_expr_cases('IF'))
         if res.error:
@@ -668,15 +669,9 @@ class Parser:
         return res.success(IfNode(cases, else_case))
 
     def if_expr_b(self):
-        """
-        if_expr_b : ELIF expr THEN (statement if_expr_b|if_expr_c?)
-        """
         return self.if_expr_cases('ELIF')
 
     def if_expr_c(self):
-        """
-        if_expr_c : ELSE statement
-        """
         res = ParseResult()
         else_case = None
 
@@ -710,9 +705,6 @@ class Parser:
         return res.success(else_case)
 
     def if_expr_b_or_c(self):
-        """
-        if_expr_b_or_c : if_expr_b | if_expr_c
-        """
         res = ParseResult()
         cases, else_case = [], None
 
@@ -729,9 +721,6 @@ class Parser:
         return res.success((cases, else_case))
 
     def if_expr_cases(self, case_keyword):
-        """
-        Manejar casos de IF/ELIF
-        """
         res = ParseResult()
         cases = []
         else_case = None
@@ -928,10 +917,6 @@ class Parser:
         return res.success(WhileNode(condition, body, False))
 
     def func_def(self):
-        """
-        func_def : FUN IDENTIFIER? LPAREN (IDENTIFIER (COMMA IDENTIFIER)*)? RPAREN ARROW expr
-                 | FUN IDENTIFIER? LPAREN (IDENTIFIER (COMMA IDENTIFIER)*)? RPAREN NEWLINE statements END
-        """
         res = ParseResult()
 
         if not self.current_tok.matches('FUN', 'FUN'):
@@ -1048,12 +1033,23 @@ class Parser:
             left = BinOpNode(left, op_tok, right)
         return res.success(left)
 def yacc(tokens):
-    """Crear parser y analizar tokens"""
     parser = Parser(tokens)
     return parser.parse()
+
+
+
+
+
+
+
+
+
+
+
+
 import os
 import math
-from lexer import Token
+from lexer import *
 from parser import *
 class RTError(Exception):
     def __init__(self, pos_start, pos_end, detalles, context):
@@ -1604,9 +1600,9 @@ class Interpreter:
     for element_node in node.element_nodes:
       elements.append(res.register(self.visit(element_node, context)))
       if res.should_return(): return res
-    return res.success(
-      List(elements).set_context(context).set_pos(node.pos_start, node.pos_end)
-    )
+    if len(elements) == 0:
+        return res.success(Number.null)
+    return res.success(elements[-1])
   def visit_VarAccessNode(self, node, context):
     res = RTResult()
     var_name = node.var_name_tok.value
@@ -1624,7 +1620,21 @@ class Interpreter:
     res = RTResult()
     var_name = node.var_name_tok.value
     value = res.register(self.visit(node.value_node, context))
-    if res.should_return(): return res
+    if res.should_return(): 
+        return res
+    
+    # Verificar si la variable ya existe en algún contexto padre
+    existing_value = None
+    current_context = context
+    while current_context:
+        existing_value = current_context.symbol_table.get(var_name)
+        if existing_value is not None:
+            # Actualizar la variable en el contexto donde existe
+            current_context.symbol_table.set(var_name, value)
+            return res.success(value)
+        current_context = current_context.parent
+    
+    # Si no existe, crearla en el contexto actual
     context.symbol_table.set(var_name, value)
     return res.success(value)
   def visit_BinOpNode(self, node, context):
@@ -1694,34 +1704,61 @@ class Interpreter:
   def visit_ForNode(self, node, context):
     res = RTResult()
     elements = []
+    
     start_value = res.register(self.visit(node.start_value_node, context))
-    if res.should_return(): return res
+    if res.should_return(): 
+        return res
+    
     end_value = res.register(self.visit(node.end_value_node, context))
-    if res.should_return(): return res
+    if res.should_return(): 
+        return res
+    
     if node.step_value_node:
-      step_value = res.register(self.visit(node.step_value_node, context))
-      if res.should_return(): return res
+        step_value = res.register(self.visit(node.step_value_node, context))
+        if res.should_return(): 
+            return res
     else:
-      step_value = Number(1)
+        step_value = Number(1)
+    
     i = start_value.value
+    
+    # NO crear un nuevo contexto para cada iteración
+    # Usar el mismo contexto para mantener las variables
+    
     if step_value.value >= 0:
-      condition = lambda: i < end_value.value
+        condition = lambda: i < end_value.value
     else:
-      condition = lambda: i > end_value.value    
+        condition = lambda: i > end_value.value
+    
     while condition():
-      context.symbol_table.set(node.var_name_tok.value, Number(i))
-      i += step_value.value
-      value = res.register(self.visit(node.body_node, context))
-      if res.should_return() and res.loop_should_continue == False and res.loop_should_break == False: return res      
-      if res.loop_should_continue:
-        continue      
-      if res.loop_should_break:
-        break
-      elements.append(value)
-    return res.success(
-      Number.null if node.should_return_null else
-      List(elements).set_context(context).set_pos(node.pos_start, node.pos_end)
-    )
+        # Establecer la variable de iteración en el contexto ACTUAL
+        context.symbol_table.set(node.var_name_tok.value, Number(i))
+        
+        value = res.register(self.visit(node.body_node, context))
+        
+        if res.should_return() and res.loop_should_continue == False and res.loop_should_break == False: 
+            return res
+        
+        if res.loop_should_continue:
+            res.loop_should_continue = False
+            i += step_value.value
+            continue
+        
+        if res.loop_should_break:
+            res.loop_should_break = False
+            break
+        
+        elements.append(value)
+        i += step_value.value
+    
+    # IMPORTANTE: Si solo queremos efectos secundarios, retornar null
+    # Si queremos recopilar valores, retornar la lista
+    if node.should_return_null:
+        return res.success(Number.null)
+    else:
+        return res.success(
+            List(elements).set_context(context).set_pos(node.pos_start, node.pos_end)
+        )
   def visit_WhileNode(self, node, context):
     res = RTResult()
     elements = []
@@ -1807,15 +1844,23 @@ def run(fn, text):
   context.symbol_table = global_symbol_table
   result = interpreter.visit(ast.node, context)
   return result.value, result.error
-from lexer import lex
+
+
+
+
+
+
+
+
+from lexer import Lexer
 from parser import yacc
 from interpreter import global_symbol_table, Interpreter, Context
 def run(nombre_archivo, text):
-    lexer = lex(nombre_archivo, text)
-    tokens, error = lexer.tokenize()
+    lexer = Lexer(nombre_archivo, text)
+    token, error = lexer.tokenize()
     if error:
         return None, error
-    ast = yacc(tokens)
+    ast = yacc(token)
     if ast.error:
         return None, ast.error
     interpreter = Interpreter()
