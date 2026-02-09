@@ -128,6 +128,8 @@ class Lexer:
                 tokens.append(self.make_number())
             elif self.actual in alfabeto:
                 tokens.append(self.make_identificador())
+			elif self.actual =='"':
+                tokens.append(self.make_string())
             elif self.actual == '+':
                 tokens.append(Token(tok_plus,start_pos=self.pos))
                 self.advance()
